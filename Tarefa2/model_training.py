@@ -41,4 +41,3 @@ test_data['Result'] = encoder.inverse_transform(y_pred)
 test_data[['RowId', 'Result']].to_csv('predictions.csv', index=False)
 
 print("Predictions saved to 'predictions.csv'")
-
