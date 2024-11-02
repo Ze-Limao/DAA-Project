@@ -1,17 +1,18 @@
 import os
 import pandas as pd
 from sklearn.ensemble import (
-    RandomForestClassifier, GradientBoostingClassifier, 
+    RandomForestClassifier, GradientBoostingClassifier,
     BaggingClassifier, StackingClassifier
 )
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA
 from sklearn.feature_selection import RFE
+from sklearn.pipeline import Pipeline
 import xgboost as xgb
 
 print("⏳ Loading and Preprocessing Dataset...")
@@ -23,6 +24,7 @@ print("✅ Train dataset loaded and cleaned.")
 numerical_features = train_data.select_dtypes(include=['float64', 'int64']).columns.tolist()
 categorical_features = train_data.select_dtypes(include=['object', 'category']).columns.tolist()
 
+# Preprocessing steps
 preprocessor = ColumnTransformer(
     transformers=[
         ('num', StandardScaler(), numerical_features),
@@ -33,6 +35,7 @@ preprocessor = ColumnTransformer(
 label_encoder = LabelEncoder()
 X_train_full = train_data.drop(columns=['Transition'])
 y_train_full = label_encoder.fit_transform(train_data['Transition'])
+
 X_train_transformed = preprocessor.fit_transform(X_train_full)
 X_test_full = test_data
 X_test_transformed = preprocessor.transform(X_test_full)
@@ -52,35 +55,60 @@ print("\n⚙️ Splitting data and training models with hyperparameter tuning...
 X_train, X_val, y_train, y_val = train_test_split(X_train_selected, y_train_full, test_size=0.2, random_state=42)
 
 models = {
-    "RandomForest": RandomForestClassifier(random_state=42),
-    "GradientBoosting": GradientBoostingClassifier(random_state=42),
-    "Bagging": BaggingClassifier(random_state=42),
-    "DecisionTree": DecisionTreeClassifier(random_state=42),
-    "SVM": SVC(probability=True),
-    "XGBoost": xgb.XGBClassifier(eval_metric='logloss', random_state=42)
+    "RandomForest": Pipeline([
+        ('classifier', RandomForestClassifier(random_state=42))
+    ]),
+    "GradientBoosting": Pipeline([
+        ('classifier', GradientBoostingClassifier(random_state=42))
+    ]),
+    "Bagging": Pipeline([
+        ('classifier', BaggingClassifier(random_state=42))
+    ]),
+    "DecisionTree": Pipeline([
+        ('classifier', DecisionTreeClassifier(random_state=42))
+    ]),
+    "SVM": Pipeline([
+        ('classifier', SVC(probability=True))
+    ]),
+    "XGBoost": Pipeline([
+        ('classifier', xgb.XGBClassifier(eval_metric='logloss', random_state=42))
+    ])
 }
 
 param_grids = {
-    "RandomForest": {'n_estimators': [100, 200], 'max_depth': [None, 10, 20]},
-    "GradientBoosting": {'n_estimators': [100, 200], 'learning_rate': [0.05, 0.1]},
-    "Bagging": {'n_estimators': [10, 50]},
-    "DecisionTree": {'max_depth': [None, 10, 20]},
-    "SVM": {'C': [0.1, 1, 10], 'kernel': ['linear', 'rbf']},
+    "RandomForest": {'classifier__n_estimators': [100, 200], 'classifier__max_depth': [None, 10, 20]},
+    "GradientBoosting": {'classifier__n_estimators': [100, 200], 'classifier__learning_rate': [0.05, 0.1]},
+    "Bagging": {'classifier__n_estimators': [10, 50]},
+    "DecisionTree": {'classifier__max_depth': [None, 10, 20]},
+    "SVM": {'classifier__C': [0.1, 1, 10], 'classifier__kernel': ['linear', 'rbf']},
     "XGBoost": {
-        'n_estimators': [100, 200, 500],
-        'learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'max_depth': [3, 5, 7, 9, 12],
-        'gamma': [0, 0.1, 0.5, 1],
-        'min_child_weight': [1, 5, 10],
-        'subsample': [0.5, 0.7, 1.0],
-        'booster': ['gbtree', 'dart']
+        'classifier__n_estimators': [100, 150],
+        'classifier__learning_rate': [0.05, 0.1],
+        'classifier__max_depth': [3, 4],
+        'classifier__gamma': [0, 0.1],
+        'classifier__subsample': [0.7, 1.0],
+        'classifier__booster': ['gbtree']
     }
 }
 
+"""
+"XGBoost": {
+        'classifier__n_estimators': [100, 200, 500],
+        'classifier__learning_rate': [0.01, 0.05, 0.1, 0.2],
+        'classifier__max_depth': [3, 5, 7, 9, 12],
+        'classifier__gamma': [0, 0.1, 0.5, 1],
+        'classifier__min_child_weight': [1, 5, 10],
+        'classifier__subsample': [0.5, 0.7, 1.0],
+        'classifier__booster': ['gbtree', 'dart']
+    }
+"""
+
 results = {}
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
 for model_name, model in models.items():
     print(f"🔍 Tuning {model_name}...")
-    clf = GridSearchCV(model, param_grids[model_name], cv=3, scoring='f1_macro', n_jobs=-1)
+    clf = GridSearchCV(model, param_grids[model_name], cv=cv, scoring='f1_macro', n_jobs=-1)
     clf.fit(X_train, y_train)
     best_model = clf.best_estimator_
     y_pred = best_model.predict(X_val)
