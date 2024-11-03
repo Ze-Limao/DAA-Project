@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 from sklearn.ensemble import (
     RandomForestClassifier, GradientBoostingClassifier,
     BaggingClassifier, StackingClassifier
@@ -15,11 +16,23 @@ from sklearn.feature_selection import RFE
 from sklearn.pipeline import Pipeline
 import xgboost as xgb
 
+def winsorize_outliers(data, lower_percentile=0.01, upper_percentile=0.99):
+    """Apply Winsorization to reduce the impact of outliers."""
+    for col in data.select_dtypes(include=['float64', 'int64']).columns:
+        lower_bound = data[col].quantile(lower_percentile)
+        upper_bound = data[col].quantile(upper_percentile)
+        data[col] = np.where(data[col] < lower_bound, lower_bound, data[col])
+        data[col] = np.where(data[col] > upper_bound, upper_bound, data[col])
+    return data
+
 print("⏳ Loading and Preprocessing Dataset...")
 train_data = pd.read_csv('../datasets/train_radiomics_hipocamp.csv')
 test_data = pd.read_csv('../datasets/test_radiomics_hipocamp.csv')
 train_data.dropna(inplace=True)
 print("✅ Train dataset loaded and cleaned.")
+
+train_data = winsorize_outliers(train_data)
+print("✅ Winsorization applied to outliers in the training data.")
 
 constant_columns = [col for col in train_data.columns if train_data[col].nunique() == 1]
 train_data.drop(columns=constant_columns, inplace=True)
@@ -51,7 +64,8 @@ X_test_selected = rfe_selector.transform(X_test_transformed)
 print(f"✅ RFE complete with {X_train_selected.shape[1]} features retained.")
 
 print("\n🌟 Applying PCA for dimensionality reduction...")
-pca = PCA(n_components=300)
+n_components = min(300, X_train_selected.shape[1])
+pca = PCA(n_components=n_components)
 X_train_pca = pca.fit_transform(X_train_selected)
 X_test_pca = pca.transform(X_test_selected)
 
