@@ -21,10 +21,14 @@ test_data = pd.read_csv('../datasets/test_radiomics_hipocamp.csv')
 train_data.dropna(inplace=True)
 print("✅ Train dataset loaded and cleaned.")
 
+constant_columns = [col for col in train_data.columns if train_data[col].nunique() == 1]
+train_data.drop(columns=constant_columns, inplace=True)
+test_data.drop(columns=constant_columns, inplace=True)
+print(f"✅ Removed constant columns: {constant_columns}")
+
 numerical_features = train_data.select_dtypes(include=['float64', 'int64']).columns.tolist()
 categorical_features = train_data.select_dtypes(include=['object', 'category']).columns.tolist()
 
-# Preprocessing steps
 preprocessor = ColumnTransformer(
     transformers=[
         ('num', StandardScaler(), numerical_features),
