@@ -11,7 +11,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder, Normalizer
 from sklearn.compose import ColumnTransformer
-from sklearn.decomposition import PCA
+from sklearn.feature_selection import RFE
 from sklearn.pipeline import Pipeline
 import xgboost as xgb
 from colorama import Fore, init
@@ -43,7 +43,6 @@ print(Fore.GREEN + "✅ Train dataset loaded and cleaned.")
 
 train_data = winsorize_outliers(train_data)
 print(Fore.GREEN + "✅ Winsorization applied to outliers in the training data.")
-
 
 constant_columns = [col for col in train_data.columns if train_data[col].nunique() == 1]
 train_data.drop(columns=constant_columns, inplace=True)
@@ -79,15 +78,14 @@ X_train_transformed = preprocessor.fit_transform(X_train_full)
 X_test_full = test_data
 X_test_transformed = preprocessor.transform(X_test_full)
 
-print(Fore.BLUE + "\n🌟 Applying PCA for dimensionality reduction...")
-n_components = min(300, X_train_transformed.shape[1])
-pca = PCA(n_components=n_components)
-X_train_pca = pca.fit_transform(X_train_transformed)
-X_test_pca = pca.transform(X_test_transformed)
-print(Fore.GREEN + f"✅ PCA complete with {n_components} components retained.")
+print(Fore.BLUE + "\n🌟 Applying RFE for feature selection...")
+rf = RandomForestClassifier(random_state=42)
+rfe = RFE(RandomForestClassifier(random_state=42), n_features_to_select=500, step=100)
+X_train_rfe = rfe.fit_transform(X_train_transformed, y_train_full)
+X_test_rfe = rfe.transform(X_test_transformed)
+print(Fore.GREEN + "✅ RFE applied.")
 
-print(Fore.BLUE + "\n⚙️ Splitting data and training models with hyperparameter tuning...")
-X_train, X_val, y_train, y_val = train_test_split(X_train_pca, y_train_full, test_size=0.2, random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(X_train_rfe, y_train_full, test_size=0.2, random_state=42)
 print(Fore.GREEN + "✅ Data split into training and validation sets.")
 
 models = {
@@ -176,8 +174,8 @@ submissions_dir = "submissions"
 os.makedirs(submissions_dir, exist_ok=True)
 
 for model_name, model in models.items():
-    model.fit(X_train_pca, y_train_full)
-    y_pred_submission = model.predict(X_test_pca)
+    model.fit(X_train_rfe, y_train_full)
+    y_pred_submission = model.predict(X_test_rfe)
     y_pred_stacking_submission_decoded = decode_transition(y_pred_submission, transition_encoder)
     submission = pd.DataFrame({
         "RowId": range(1, len(y_pred_submission) + 1),
@@ -187,14 +185,13 @@ for model_name, model in models.items():
     submission.to_csv(submission_file, index=False)
     print(Fore.GREEN + f"   ✅ Submission created for {model_name}: {submission_file}")
 
-stacking_model.fit(X_train_pca, y_train_full)
-y_pred_stacking_submission = stacking_model.predict(X_test_pca)
-y_pred_stacking_submission_decoded = decode_transition(y_pred_stacking_submission, transition_encoder)
+stacking_model.fit(X_train_rfe, y_train_full)
+y_pred_submission_stacking = stacking_model.predict(X_test_rfe)
+y_pred_stacking_submission_decoded = decode_transition(y_pred_submission_stacking, transition_encoder)
 stacking_submission = pd.DataFrame({
-    "RowId": range(1, len(y_pred_stacking_submission) + 1),
+    "RowId": range(1, len(y_pred_submission_stacking) + 1),
     "Result": y_pred_stacking_submission_decoded
 })
-stacking_submission.to_csv(f"{submissions_dir}/stacking_submission.csv", index=False)
-print(Fore.GREEN + "   ✅ Submission created for Stacking: submissions/stacking_submission.csv")
-
-print(Fore.WHITE + "\n🎉 All tasks completed!")
+stacking_submission_file = f"{submissions_dir}/Stacking_submission.csv"
+stacking_submission.to_csv(stacking_submission_file, index=False)
+print(Fore.GREEN + f"✅ Submission created for Stacking: {stacking_submission_file}")
