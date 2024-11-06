@@ -195,3 +195,5 @@ stacking_submission = pd.DataFrame({
 stacking_submission_file = f"{submissions_dir}/Stacking_submission.csv"
 stacking_submission.to_csv(stacking_submission_file, index=False)
 print(Fore.GREEN + f"✅ Submission created for Stacking: {stacking_submission_file}")
+
+print(Fore.WHITE + "\n🎉 All tasks completed!")
