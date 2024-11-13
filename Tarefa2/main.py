@@ -11,7 +11,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder, Normalizer
 from sklearn.compose import ColumnTransformer
-from sklearn.feature_selection import RFE
+from sklearn.feature_selection import RFECV
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 import xgboost as xgb
@@ -42,8 +42,8 @@ test_data = pd.read_csv('../datasets/test_radiomics_hipocamp.csv')
 train_data.dropna(inplace=True)
 print(Fore.GREEN + "✅ Train dataset loaded and cleaned.")
 
-# train_data = winsorize_outliers(train_data)
-# print(Fore.GREEN + "✅ Winsorization applied to outliers in the training data.")
+train_data = winsorize_outliers(train_data)
+print(Fore.GREEN + "✅ Winsorization applied to outliers in the training data.")
 
 constant_columns = [col for col in train_data.columns if train_data[col].nunique() == 1]
 train_data.drop(columns=constant_columns, inplace=True)
@@ -79,12 +79,12 @@ X_train_transformed = preprocessor.fit_transform(X_train_full)
 X_test_full = test_data
 X_test_transformed = preprocessor.transform(X_test_full)
 
-print(Fore.BLUE + "\n🌟 Applying RFE for feature selection...")
+print(Fore.BLUE + "\n🌟 Applying RFECV for feature selection...")
 rf = RandomForestClassifier(random_state=42)
-rfe = RFE(estimator=rf, n_features_to_select=int(len(numerical_features) * 0.6), step=1)
-X_train_rfe = rfe.fit_transform(X_train_transformed, y_train_full)
-X_test_rfe = rfe.transform(X_test_transformed)
-print(Fore.GREEN + f"✅ RFE applied. Optimal number of features: {rfe.n_features_}")
+rfecv = RFECV(estimator=rf, step=1, cv=3, scoring='f1_macro')
+X_train_rfe = rfecv.fit_transform(X_train_transformed, y_train_full)
+X_test_rfe = rfecv.transform(X_test_transformed)
+print(Fore.GREEN + f"✅ RFECV applied. Optimal number of features: {rfecv.n_features_}")
 
 print(Fore.BLUE + "\n🌟 Applying PCA for dimensionality reduction...")
 pca = PCA(n_components=0.95)
@@ -128,6 +128,18 @@ param_grids = {
         'classifier__max_depth': [1, 2, 3, 4],
     }
 }
+
+"""
+"XGBoost": {
+        'classifier__n_estimators': [100, 200, 500],
+        'classifier__learning_rate': [0.01, 0.05, 0.1, 0.2],
+        'classifier__max_depth': [3, 5, 7, 9, 12],
+        'classifier__gamma': [0, 0.1, 0.5, 1],
+        'classifier__min_child_weight': [1, 5, 10],
+        'classifier__subsample': [0.5, 0.7, 1.0],
+        'classifier__booster': ['gbtree', 'dart']
+    }
+"""
 
 results = {}
 cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
