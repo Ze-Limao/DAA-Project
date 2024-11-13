@@ -13,6 +13,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder, Normalizer
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_selection import RFE
 from sklearn.pipeline import Pipeline
+from sklearn.decomposition import PCA
 import xgboost as xgb
 from colorama import Fore, init
 
@@ -41,8 +42,8 @@ test_data = pd.read_csv('../datasets/test_radiomics_hipocamp.csv')
 train_data.dropna(inplace=True)
 print(Fore.GREEN + "✅ Train dataset loaded and cleaned.")
 
-train_data = winsorize_outliers(train_data)
-print(Fore.GREEN + "✅ Winsorization applied to outliers in the training data.")
+# train_data = winsorize_outliers(train_data)
+# print(Fore.GREEN + "✅ Winsorization applied to outliers in the training data.")
 
 constant_columns = [col for col in train_data.columns if train_data[col].nunique() == 1]
 train_data.drop(columns=constant_columns, inplace=True)
@@ -80,12 +81,18 @@ X_test_transformed = preprocessor.transform(X_test_full)
 
 print(Fore.BLUE + "\n🌟 Applying RFE for feature selection...")
 rf = RandomForestClassifier(random_state=42)
-rfe = RFE(RandomForestClassifier(random_state=42), n_features_to_select=500, step=100)
+rfe = RFE(estimator=rf, n_features_to_select=int(len(numerical_features) * 0.6), step=1)
 X_train_rfe = rfe.fit_transform(X_train_transformed, y_train_full)
 X_test_rfe = rfe.transform(X_test_transformed)
-print(Fore.GREEN + "✅ RFE applied.")
+print(Fore.GREEN + f"✅ RFE applied. Optimal number of features: {rfe.n_features_}")
 
-X_train, X_val, y_train, y_val = train_test_split(X_train_rfe, y_train_full, test_size=0.2, random_state=42)
+print(Fore.BLUE + "\n🌟 Applying PCA for dimensionality reduction...")
+pca = PCA(n_components=0.95)
+X_train_pca = pca.fit_transform(X_train_rfe)
+X_test_pca = pca.transform(X_test_rfe)
+print(Fore.GREEN + f"✅ PCA applied. Number of components chosen: {pca.n_components_}")
+
+X_train, X_val, y_train, y_val = train_test_split(X_train_pca, y_train_full, test_size=0.2, random_state=42)
 print(Fore.GREEN + "✅ Data split into training and validation sets.")
 
 models = {
@@ -122,18 +129,6 @@ param_grids = {
     }
 }
 
-"""
-"XGBoost": {
-        'classifier__n_estimators': [100, 200, 500],
-        'classifier__learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'classifier__max_depth': [3, 5, 7, 9, 12],
-        'classifier__gamma': [0, 0.1, 0.5, 1],
-        'classifier__min_child_weight': [1, 5, 10],
-        'classifier__subsample': [0.5, 0.7, 1.0],
-        'classifier__booster': ['gbtree', 'dart']
-    }
-"""
-
 results = {}
 cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
 
@@ -169,27 +164,27 @@ results['Stacking'] = {
 }
 print(Fore.GREEN + f"✅ Optimized Stacking - Accuracy: {results['Stacking']['accuracy']:.2%}, F1 Score: {results['Stacking']['f1']:.2f}")
 
-print(Fore.BLUE + "\n📄 Generating submission files...")
+print(Fore.WHITE + "\n📄 Generating submission files...")
 submissions_dir = "submissions"
 os.makedirs(submissions_dir, exist_ok=True)
 
 for model_name, model in models.items():
-    model.fit(X_train_rfe, y_train_full)
-    y_pred_submission = model.predict(X_test_rfe)
+    model.fit(X_train_pca, y_train_full)
+    y_pred_submission = model.predict(X_test_pca)
     y_pred_stacking_submission_decoded = decode_transition(y_pred_submission, transition_encoder)
     submission = pd.DataFrame({
         "RowId": range(1, len(y_pred_submission) + 1),
         "Result": y_pred_stacking_submission_decoded
     })
-    submission_file = f"{submissions_dir}/{model_name}_submission.csv"
-    submission.to_csv(submission_file, index=False)
-    print(Fore.GREEN + f"   ✅ Submission created for {model_name}: {submission_file}")
+    filename = os.path.join(submissions_dir, f"{model_name.lower()}_submission.csv")
+    submission.to_csv(filename, index=False)
+    print(Fore.GREEN + f"✅ Submission for {model_name} saved: {filename}")
 
-stacking_model.fit(X_train_rfe, y_train_full)
-y_pred_submission_stacking = stacking_model.predict(X_test_rfe)
-y_pred_stacking_submission_decoded = decode_transition(y_pred_submission_stacking, transition_encoder)
+stacking_model.fit(X_train_pca, y_train_full)
+y_pred_stacking_submission = stacking_model.predict(X_test_pca)
+y_pred_stacking_submission_decoded = decode_transition(y_pred_stacking_submission, transition_encoder)
 stacking_submission = pd.DataFrame({
-    "RowId": range(1, len(y_pred_submission_stacking) + 1),
+    "RowId": range(1, len(y_pred_stacking_submission) + 1),
     "Result": y_pred_stacking_submission_decoded
 })
 stacking_submission_file = f"{submissions_dir}/Stacking_submission.csv"
