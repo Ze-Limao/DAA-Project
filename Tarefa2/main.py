@@ -16,6 +16,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 import xgboost as xgb
 from colorama import Fore, init
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 init(autoreset=True)
 
@@ -202,5 +204,63 @@ stacking_submission = pd.DataFrame({
 stacking_submission_file = f"{submissions_dir}/Stacking_submission.csv"
 stacking_submission.to_csv(stacking_submission_file, index=False)
 print(Fore.GREEN + f"✅ Submission created for Stacking: {stacking_submission_file}")
+
+print(Fore.WHITE + "\n📊 Creating performance comparison graphs...")
+graphs_dir = "graphs"
+os.makedirs(graphs_dir, exist_ok=True)
+
+model_names = list(results.keys())
+accuracies = [results[model]['accuracy'] for model in model_names]
+f1_scores = [results[model]['f1'] for model in model_names]
+
+plt.style.use('default')
+sns.set_palette("husl")
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+sns.barplot(x=accuracies, y=model_names, ax=ax1, palette='viridis')
+ax1.set_title('Model Accuracy Comparison', pad=20)
+ax1.set_xlabel('Accuracy')
+ax1.grid(True, axis='x')
+for i, v in enumerate(accuracies):
+    ax1.text(v, i, f' {v:.3f}', va='center')
+
+sns.barplot(x=f1_scores, y=model_names, ax=ax2, palette='viridis')
+ax2.set_title('Model F1-Score Comparison', pad=20)
+ax2.set_xlabel('F1-Score')
+ax2.grid(True, axis='x')
+for i, v in enumerate(f1_scores):
+    ax2.text(v, i, f' {v:.3f}', va='center')
+
+plt.tight_layout()
+graph_path = os.path.join(graphs_dir, 'model_performance_comparison.png')
+plt.savefig(graph_path, dpi=300, bbox_inches='tight')
+plt.close()
+
+plt.figure(figsize=(12, 6))
+x = np.arange(len(model_names))
+width = 0.35
+
+plt.bar(x - width/2, accuracies, width, label='Accuracy', color='skyblue')
+plt.bar(x + width/2, f1_scores, width, label='F1-Score', color='lightgreen')
+
+plt.xlabel('Models')
+plt.ylabel('Score')
+plt.title('Model Performance Comparison (Accuracy vs F1-Score)')
+plt.xticks(x, model_names, rotation=45, ha='right')
+plt.legend()
+plt.grid(True, axis='y')
+
+for i, (acc, f1) in enumerate(zip(accuracies, f1_scores)):
+    plt.text(i - width/2, acc, f'{acc:.3f}', ha='center', va='bottom')
+    plt.text(i + width/2, f1, f'{f1:.3f}', ha='center', va='bottom')
+
+plt.tight_layout()
+combined_graph_path = os.path.join(graphs_dir, 'model_performance_combined.png')
+plt.savefig(combined_graph_path, dpi=300, bbox_inches='tight')
+plt.close()
+
+print(Fore.GREEN + f"✅ Performance comparison graphs saved in {graphs_dir}:")
+print(Fore.GREEN + f"   - {graph_path}")
+print(Fore.GREEN + f"   - {combined_graph_path}")
 
 print(Fore.WHITE + "\n🎉 All tasks completed!")
