@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from colorama import Fore, init
+import matplotlib.pyplot as plt
 
 init(autoreset=True)
 
@@ -31,6 +32,13 @@ def train_model(X_train, y_train, num_epochs=50, learning_rate=0.001):
 
     dataset = TensorDataset(X_train, y_train)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    
+    plt.ion()
+    fig, ax = plt.subplots()
+    ax.set_title("Training Loss")
+    ax.set_xlabel("Epochs")
+    ax.set_ylabel("Loss")
+    loss_values = []
 
     for epoch in range(num_epochs):
         model.train()
@@ -43,7 +51,21 @@ def train_model(X_train, y_train, num_epochs=50, learning_rate=0.001):
             optimizer.step()
             running_loss += loss.item()
 
-        print(Fore.YELLOW + f" Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(dataloader):.4f}")
+        avg_loss = running_loss / len(dataloader)
+        loss_values.append(avg_loss)
+        ax.clear()
+        ax.plot(loss_values, label="Loss")
+        ax.legend()
+        ax.set_title("Training Loss")
+        ax.set_xlabel("Epochs")
+        ax.set_ylabel("Loss")
+        plt.draw()
+        plt.pause(0.01)
+
+        print(Fore.YELLOW + f" Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
+
+    plt.ioff()
+    plt.show()
 
     return model
 
