@@ -18,11 +18,14 @@ import xgboost as xgb
 from colorama import Fore, init
 import matplotlib.pyplot as plt
 import seaborn as sns
+from imblearn.over_sampling import SMOTE
+from collections import Counter
+import torch
+import neural_network 
 
 init(autoreset=True)
 
 def winsorize_outliers(data, lower_percentile=0.01, upper_percentile=0.99):
-    """Apply Winsorization to reduce the impact of outliers."""
     for col in data.select_dtypes(include=['float64', 'int64']).columns:
         lower_bound = data[col].quantile(lower_percentile)
         upper_bound = data[col].quantile(upper_percentile)
@@ -56,6 +59,11 @@ train_data, transition_encoder = encode_transition(train_data)
 print(Fore.GREEN + "✅ 'Transition' column encoded.")
 print(Fore.BLUE + f"ℹ️ 'Transition' column info: unique values = {train_data['Transition'].unique()}, data type = {train_data['Transition'].dtype}")
 
+print(Fore.BLUE + "\n📊 Class distribution before SMOTE:")
+class_distribution = Counter(train_data['Transition'])
+for class_label, count in class_distribution.items():
+    print(Fore.YELLOW + f"    Class {class_label}: {count} samples")
+
 numerical_features = train_data.select_dtypes(include=['float64', 'int64']).columns.tolist()
 numerical_features.remove('Transition')
 categorical_features = train_data.select_dtypes(include=['object', 'category']).columns.tolist()
@@ -73,7 +81,6 @@ preprocessor = ColumnTransformer(
     ]
 )
 
-label_encoder = LabelEncoder()
 X_train_full = train_data.drop(columns=['Transition'])
 y_train_full = train_data['Transition']
 
@@ -95,7 +102,17 @@ X_test_pca = pca.transform(X_test_rfe)
 print(Fore.GREEN + f"✅ PCA applied. Number of components chosen: {pca.n_components_}")
 
 X_train, X_val, y_train, y_val = train_test_split(X_train_pca, y_train_full, test_size=0.2, random_state=42)
-print(Fore.GREEN + "✅ Data split into training and validation sets.")
+
+print(Fore.BLUE + "\n🔄 Applying SMOTE to balance classes...")
+smote = SMOTE(random_state=42)
+X_train_smote, y_train_smote = smote.fit_resample(X_train, y_train)
+
+print(Fore.BLUE + "\n📊 Class distribution after SMOTE:")
+class_distribution_after = Counter(y_train_smote)
+for class_label, count in class_distribution_after.items():
+    print(Fore.YELLOW + f"    Class {class_label}: {count} samples")
+
+print(Fore.GREEN + "✅ SMOTE applied successfully.")
 
 models = {
     "RandomForest": Pipeline([
@@ -131,25 +148,30 @@ param_grids = {
     }
 }
 
-"""
-"XGBoost": {
-        'classifier__n_estimators': [100, 200, 500],
-        'classifier__learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'classifier__max_depth': [3, 5, 7, 9, 12],
-        'classifier__gamma': [0, 0.1, 0.5, 1],
-        'classifier__min_child_weight': [1, 5, 10],
-        'classifier__subsample': [0.5, 0.7, 1.0],
-        'classifier__booster': ['gbtree', 'dart']
-    }
-"""
+print(Fore.BLUE + "\n🔧 Training the neural network model...")
+neural_network_model = neural_network.main(X_train_smote, y_train_smote)
+X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
+y_val_tensor = torch.tensor(y_val.to_numpy(), dtype=torch.long)
+
+neural_network_model.eval()
+with torch.no_grad():
+    outputs = neural_network_model(X_val_tensor)
+    _, y_pred_val = torch.max(outputs, 1)
+
+y_pred_val_np = y_pred_val.numpy()
+y_val_np = y_val_tensor.numpy()
+
+accuracy = accuracy_score(y_val_np, y_pred_val_np)
+f1 = f1_score(y_val_np, y_pred_val_np, average='macro')
+print(Fore.GREEN + f"✅ Neural Network - Accuracy: {accuracy:.2%}, F1 Score: {f1:.2f}")
 
 results = {}
-cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
 for model_name, model in models.items():
     print(Fore.BLUE + f"🔍 Tuning {model_name}...")
     clf = GridSearchCV(model, param_grids[model_name], cv=cv, scoring='f1_macro', n_jobs=-1)
-    clf.fit(X_train, y_train)
+    clf.fit(X_train_smote, y_train_smote)
     best_model = clf.best_estimator_
     y_pred = best_model.predict(X_val)
     results[model_name] = {
@@ -170,7 +192,7 @@ stacking_model = StackingClassifier(
     ],
     final_estimator=GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, random_state=42)
 )
-stacking_model.fit(X_train, y_train)
+stacking_model.fit(X_train_smote, y_train_smote)
 y_pred_stacking = stacking_model.predict(X_val)
 results['Stacking'] = {
     'accuracy': accuracy_score(y_val, y_pred_stacking),
@@ -205,6 +227,23 @@ stacking_submission_file = f"{submissions_dir}/Stacking_submission.csv"
 stacking_submission.to_csv(stacking_submission_file, index=False)
 print(Fore.GREEN + f"✅ Submission created for Stacking: {stacking_submission_file}")
 
+neural_network_model.eval()
+with torch.no_grad():
+    X_test_tensor = torch.tensor(X_test_pca, dtype=torch.float32)
+    outputs = neural_network_model(X_test_tensor)
+    _, y_pred_submission = torch.max(outputs, 1)
+
+y_pred_submission_np = y_pred_submission.numpy()
+y_pred_submission_decoded = decode_transition(y_pred_submission_np, transition_encoder)
+
+nn_submission = pd.DataFrame({
+    "RowId": range(1, len(y_pred_submission_np) + 1),
+    "Result": y_pred_submission_decoded
+})
+nn_submission_file = f"{submissions_dir}/neural_network_submission.csv"
+nn_submission.to_csv(nn_submission_file, index=False)
+print(Fore.GREEN + f"✅ Submission created for Neural Network: {nn_submission_file}")
+
 print(Fore.WHITE + "\n📊 Creating performance comparison graphs...")
 graphs_dir = "graphs"
 os.makedirs(graphs_dir, exist_ok=True)
@@ -217,14 +256,14 @@ plt.style.use('default')
 sns.set_palette("husl")
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
 
-sns.barplot(x=accuracies, y=model_names, ax=ax1, palette='viridis')
+sns.barplot(x=accuracies, y=model_names, hue=model_names, ax=ax1, palette='viridis')
 ax1.set_title('Model Accuracy Comparison', pad=20)
 ax1.set_xlabel('Accuracy')
 ax1.grid(True, axis='x')
 for i, v in enumerate(accuracies):
     ax1.text(v, i, f' {v:.3f}', va='center')
 
-sns.barplot(x=f1_scores, y=model_names, ax=ax2, palette='viridis')
+sns.barplot(x=f1_scores, y=model_names, hue=model_names, ax=ax2, palette='viridis')
 ax2.set_title('Model F1-Score Comparison', pad=20)
 ax2.set_xlabel('F1-Score')
 ax2.grid(True, axis='x')
