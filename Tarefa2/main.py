@@ -24,6 +24,8 @@ from imblearn.over_sampling import SMOTE
 from collections import Counter
 import torch
 import neural_network
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 
 class ModelTrainingGUI:
     def __init__(self, root):
@@ -36,11 +38,10 @@ class ModelTrainingGUI:
         self.y_train_full = None
         self.transition_encoder = None
         self.results = {}
-        
         main_frame = ttk.Frame(root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        title_label = ttk.Label(main_frame, text="Model Training Interface", font=('Helvetica', 16, 'bold'))
+        title_label = ttk.Label(main_frame, text="Model Training Interface", font=("Helvetica", 18, "bold"))
         title_label.grid(row=0, column=0, columnspan=2, pady=10)
         
         model_frame = ttk.LabelFrame(main_frame, text="Available Models", padding="10")
@@ -444,7 +445,7 @@ class ModelTrainingGUI:
 
 def main():
     init(autoreset=True)
-    root = tk.Tk()
+    root = ttk.Window(themename="solar")
     app = ModelTrainingGUI(root)
     root.mainloop()
 
