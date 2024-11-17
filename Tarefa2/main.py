@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import os
 import pandas as pd
 import numpy as np
@@ -23,7 +23,7 @@ import seaborn as sns
 from imblearn.over_sampling import SMOTE
 from collections import Counter
 import torch
-import neural_network 
+import neural_network
 
 class ModelTrainingGUI:
     def __init__(self, root):
@@ -114,6 +114,16 @@ class ModelTrainingGUI:
         
         self.progress_bar = ttk.Progressbar(self.progress_frame, length=700, mode='determinate')
         self.progress_bar.grid(row=1, column=0, pady=5)
+        
+        self.save_preprocessed_var = tk.BooleanVar(value=False)
+        save_preprocessed_cb = ttk.Checkbutton(main_frame, text="Save preprocessed data", variable=self.save_preprocessed_var)
+        save_preprocessed_cb.grid(row=5, column=0, columnspan=2, pady=5)
+        
+        self.use_preprocessed_var = tk.BooleanVar(value=False)
+        use_preprocessed_cb = ttk.Checkbutton(main_frame, text="Use preprocessed data", variable=self.use_preprocessed_var, command=self.select_preprocessed_file)
+        use_preprocessed_cb.grid(row=6, column=0, columnspan=2, pady=5)
+        
+        self.preprocessed_file_path = None
 
     def update_progress(self, message, progress_value):
         self.progress_var.set(message)
@@ -127,6 +137,15 @@ class ModelTrainingGUI:
     def deselect_all(self):
         for var in self.model_vars.values():
             var.set(False)
+
+    def select_preprocessed_file(self):
+        if self.use_preprocessed_var.get():
+            self.preprocessed_file_path = filedialog.askopenfilename(
+                title="Select Preprocessed Data File",
+                filetypes=(("CSV files", "*.csv"), ("All files", "*.*"))
+            )
+        else:
+            self.preprocessed_file_path = None
 
     def preprocess_data(self):
         self.update_progress("Loading and preprocessing dataset...", 5)
@@ -187,7 +206,32 @@ class ModelTrainingGUI:
         self.X_train_pca = pca.fit_transform(X_train_rfe)
         self.X_test_pca = pca.transform(X_test_rfe)
         
+        if self.save_preprocessed_var.get():
+            preprocessed_data = {
+                'X_train_pca': self.X_train_pca,
+                'X_test_pca': self.X_test_pca,
+                'y_train_full': self.y_train_full,
+                'transition_encoder': self.transition_encoder
+            }
+            preprocessed_file_path = filedialog.asksaveasfilename(
+                title="Save Preprocessed Data",
+                defaultextension=".csv",
+                filetypes=(("CSV files", "*.csv"), ("All files", "*.*"))
+            )
+            if preprocessed_file_path:
+                pd.to_pickle(preprocessed_data, preprocessed_file_path)
+        
         return True
+
+    def load_preprocessed_data(self):
+        if self.preprocessed_file_path:
+            preprocessed_data = pd.read_pickle(self.preprocessed_file_path)
+            self.X_train_pca = preprocessed_data['X_train_pca']
+            self.X_test_pca = preprocessed_data['X_test_pca']
+            self.y_train_full = preprocessed_data['y_train_full']
+            self.transition_encoder = preprocessed_data['transition_encoder']
+            return True
+        return False
 
     def train_models(self):
         selected_models = [name for name, var in self.model_vars.items() if var.get()]
@@ -197,9 +241,14 @@ class ModelTrainingGUI:
             return
         
         try:
-            if self.X_train_pca is None:
-                if not self.preprocess_data():
+            if self.use_preprocessed_var.get():
+                if not self.load_preprocessed_data():
+                    messagebox.showerror("Error", "Failed to load preprocessed data.")
                     return
+            else:
+                if self.X_train_pca is None:
+                    if not self.preprocess_data():
+                        return
             
             submissions_dir = "submissions"
             graphs_dir = "graphs"
