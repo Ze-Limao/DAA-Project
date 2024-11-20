@@ -123,6 +123,10 @@ class ModelTrainingGUI:
         self.use_preprocessed_var = tk.BooleanVar(value=False)
         use_preprocessed_cb = ttk.Checkbutton(main_frame, text="Use preprocessed data", variable=self.use_preprocessed_var, command=self.select_preprocessed_file)
         use_preprocessed_cb.grid(row=6, column=0, columnspan=2, pady=5)
+
+        self.use_control_data = tk.BooleanVar(value=False)
+        use_control_data_cb = ttk.Checkbutton(main_frame, text="Use control data", variable=self.use_control_data)
+        use_control_data_cb.grid(row=7, column=0, columnspan=2, pady=5)
         
         self.preprocessed_file_path = None
 
@@ -151,7 +155,12 @@ class ModelTrainingGUI:
     def preprocess_data(self):
         self.update_progress("Loading and preprocessing dataset...", 5)
         
-        train_data = pd.read_csv('../datasets/train_radiomics_hipocamp.csv')
+        train_data = None
+        if self.use_control_data.get():
+            train_data = pd.read_csv('../datasets/train_radiomics_occipital_CONTROL.csv')
+        else:
+            train_data = pd.read_csv('../datasets/train_radiomics_hipocamp.csv')
+        
         test_data = pd.read_csv('../datasets/test_radiomics_hipocamp.csv')
         train_data.dropna(inplace=True)
         
