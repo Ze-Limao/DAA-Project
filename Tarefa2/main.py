@@ -454,7 +454,8 @@ class ModelTrainingGUI:
 
 def main():
     init(autoreset=True)
-    root = ttk.Window(themename="solar")
+    root = ttk.Window(themename="superhero")
+    root.tk.call('tk', 'scaling', 2.0)
     app = ModelTrainingGUI(root)
     root.mainloop()
 
