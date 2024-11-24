@@ -172,7 +172,7 @@ class ModelTrainingGUI:
                 data[col] = np.where(data[col] > upper_bound, upper_bound, data[col])
             return data
         
-        train_data = winsorize_outliers(train_data)
+        # train_data = winsorize_outliers(train_data)
         
         constant_columns = [col for col in train_data.columns if train_data[col].nunique() == 1]
         train_data.drop(columns=constant_columns, inplace=True)
