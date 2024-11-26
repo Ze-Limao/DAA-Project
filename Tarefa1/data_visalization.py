@@ -6,7 +6,10 @@ import streamlit as st
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.manifold import TSNE
+from sklearn.metrics import confusion_matrix, classification_report
 from scipy.stats import spearmanr
+import shap
 
 def advanced_radiomics_visualization(train_data):
     """
@@ -19,13 +22,11 @@ def advanced_radiomics_visualization(train_data):
     """
     st.title("Advanced Radiomics Visualization Dashboard")
     
-    # 1. Basic Dataset Overview
     st.header("1. Basic Dataset Overview")
     st.write("Dataset Shape:", train_data.shape)
     st.write("Column Types:", train_data.dtypes.value_counts())
     st.write("Target Variable Distribution:", train_data['Transition'].value_counts(normalize=True))
     
-    # 2. Feature Selection and Dimensionality Reduction Techniques
     numerical_features = train_data.select_dtypes(include=['float64', 'int64']).columns.tolist()
     numerical_features = [col for col in numerical_features if col != 'Transition']
     X = train_data[numerical_features]
@@ -36,7 +37,6 @@ def advanced_radiomics_visualization(train_data):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
-    # 3. Principal Component Analysis (PCA)
     st.header("2. Principal Component Analysis (PCA)")
     pca = PCA(n_components=0.95)
     X_pca = pca.fit_transform(X_scaled)
@@ -48,7 +48,6 @@ def advanced_radiomics_visualization(train_data):
     plt.title('PCA - Cumulative Variance Explained')
     st.pyplot()
     
-    # 4. Feature Importance with Random Forest
     st.header("3. Feature Importance with Random Forest")
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
     rf.fit(X_scaled, y)
@@ -65,7 +64,6 @@ def advanced_radiomics_visualization(train_data):
     plt.tight_layout()
     st.pyplot()
     
-    # 5. High-Dimensional Correlation Analysis
     st.header("4. High-Dimensional Correlation Analysis")
     correlation_matrix = np.zeros((len(top_features), len(top_features)))
     for i, feat1 in enumerate(top_features.index):
@@ -86,7 +84,6 @@ def advanced_radiomics_visualization(train_data):
     plt.tight_layout()
     st.pyplot()
     
-    # 6. Distribution of Top Features by Transition
     st.header("5. Distribution of Top Features by Transition")
     plt.figure(figsize=(15, 10))
     for i, feature in enumerate(top_features.index[:6], 1):
@@ -97,36 +94,61 @@ def advanced_radiomics_visualization(train_data):
     plt.tight_layout()
     st.pyplot()
     
-    # 7. 2D Visualization of First Two Principal Components
-    st.header("6. 2D Visualization of First Two Principal Components")
-    plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], 
-                c=y, 
-                cmap='viridis', 
-                alpha=0.7)
-    plt.colorbar(scatter, label='Transition Class')
-    plt.title('2D PCA Visualization with Transition')
-    plt.xlabel('First Principal Component')
-    plt.ylabel('Second Principal Component')
+    st.header("6. Pairwise Feature Relationships")
+    available_features = [feature for feature in top_features.index[:6] if feature in train_data.columns]
+    sns.pairplot(train_data[available_features + ['Transition']], hue='Transition', palette='viridis')
     st.pyplot()
     
-    # 8. Statistical Summary of Top Features
-    st.header("7. Statistical Summary of Top Features")
-    top_features_df = train_data[list(top_features.index) + ['Transition']]
-    st.write("Statistical Summary of Top Features by Transition:")
-    st.write(top_features_df.groupby('Transition').mean())
-
-    # 9. Separate Legend for Classes
-    st.header("8. Separate Legend for Classes")
-    plt.figure(figsize=(8, 6))
-    for i, cls in enumerate(le.classes_):
-        plt.scatter([], [], c=plt.cm.viridis(i / (len(le.classes_) - 1)), label=cls)
-    plt.legend(title='Transition Classes', loc='center')
-    plt.axis('off')
-    plt.title('Transition Classes Color Legend')
+    st.header("7. Feature Distributions Across All Samples")
+    plt.figure(figsize=(15, 10))
+    for i, feature in enumerate(top_features.index[:6], 1):
+        plt.subplot(2, 3, i)
+        sns.kdeplot(train_data[feature], shade=True, color="blue", label='All Data')
+        plt.title(f'Distribution of {feature}')
+        plt.xlabel(feature)
+        plt.ylabel('Density')
+        plt.legend()
     plt.tight_layout()
     st.pyplot()
+    
+    st.header("8. t-SNE Visualization")
+    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+    X_tsne = tsne.fit_transform(X_scaled)
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y, cmap='viridis', alpha=0.7)
+    plt.colorbar(scatter, label='Transition Class')
+    plt.title('t-SNE Visualization')
+    plt.xlabel('t-SNE Component 1')
+    plt.ylabel('t-SNE Component 2')
+    st.pyplot()
+    
+    st.header("9. Class-wise PCA Clustering Heatmap")
+    centroids = pd.DataFrame(X_pca, columns=[f'PC{i+1}' for i in range(X_pca.shape[1])]).groupby(y).mean()
+    sns.heatmap(centroids, annot=True, cmap='coolwarm', fmt='.2f')
+    plt.title('Class-wise PCA Centroids')
+    st.pyplot()
+    
+    st.header("10. Class Balance")
+    train_data['Transition'].value_counts().plot(kind='pie', autopct='%1.1f%%', colors=sns.color_palette('viridis'))
+    plt.title('Class Distribution')
+    st.pyplot()
+    
+    st.header("11. Model Performance Metrics")
+    y_pred = rf.predict(X_scaled)
+    conf_matrix = confusion_matrix(y, y_pred)
+    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=le.classes_, yticklabels=le.classes_)
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    st.pyplot()
+    st.text("Classification Report:")
+    st.text(classification_report(y, y_pred, target_names=le.classes_))
+    
+    st.header("12. SHAP Summary Plot")
+    explainer = shap.TreeExplainer(rf)
+    shap_values = explainer.shap_values(X_scaled)
+    shap.summary_plot(shap_values, pd.DataFrame(X_scaled, columns=numerical_features), plot_type="bar")
+    st.pyplot()
 
-# Usage
 train_data = pd.read_csv('../datasets/train_radiomics_hipocamp.csv')
 advanced_radiomics_visualization(train_data)
