@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import messagebox, filedialog
 import os
 import pandas as pd
 import numpy as np
@@ -26,26 +26,32 @@ import torch
 import neural_network
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
+from ttkbootstrap.icons import Icon
 
 class ModelTrainingGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Model Training Interface")
-        self.root.geometry("800x600")
+        self.root.title("Advanced Model Training Interface")
+        self.root.geometry("1000x800")
         
         self.X_train_pca = None
         self.X_test_pca = None
         self.y_train_full = None
         self.transition_encoder = None
         self.results = {}
-        main_frame = ttk.Frame(root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        title_label = ttk.Label(main_frame, text="Model Training Interface", font=("Helvetica", 18, "bold"))
-        title_label.grid(row=0, column=0, columnspan=2, pady=10)
+        self.create_widgets()
         
-        model_frame = ttk.LabelFrame(main_frame, text="Available Models", padding="10")
-        model_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+    def create_widgets(self):
+        main_frame = ttk.Frame(self.root, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        title_label = ttk.Label(main_frame, text="Advanced Model Training Interface", 
+                                font=("Helvetica", 24, "bold"), bootstyle="info")
+        title_label.pack(pady=(0, 20))
+        
+        model_frame = ttk.Labelframe(main_frame, text="Available Models", padding="10")
+        model_frame.pack(fill=tk.X, pady=(0, 20))
         
         self.models = {
             "RandomForest": {
@@ -94,39 +100,58 @@ class ModelTrainingGUI:
         for i, model_name in enumerate(self.models.keys()):
             var = tk.BooleanVar(value=False)
             self.model_vars[model_name] = var
-            cb = ttk.Checkbutton(model_frame, text=model_name, variable=var)
-            cb.grid(row=i//2, column=i%2, sticky=tk.W, padx=5, pady=2)
+            cb = ttk.Checkbutton(model_frame, text=model_name, variable=var, 
+                                 bootstyle="round-toggle")
+            cb.grid(row=i//4, column=i%4, sticky=tk.W, padx=10, pady=5)
         
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=20)
+        button_frame.pack(pady=10)
         
-        ttk.Button(button_frame, text="Select All", command=self.select_all).grid(row=0, column=0, padx=5)
-        ttk.Button(button_frame, text="Deselect All", command=self.deselect_all).grid(row=0, column=1, padx=5)
+        select_all_btn = ttk.Button(button_frame, text="Select All", 
+                                    command=self.select_all, bootstyle="info-outline")
+        select_all_btn.grid(row=0, column=0, padx=5)
         
-        train_button = ttk.Button(main_frame, text="Train Selected Models", command=self.train_models)
-        train_button.grid(row=3, column=0, columnspan=2, pady=10)
+        deselect_all_btn = ttk.Button(button_frame, text="Deselect All", 
+                                      command=self.deselect_all, bootstyle="info-outline")
+        deselect_all_btn.grid(row=0, column=1, padx=5)
         
-        self.progress_frame = ttk.LabelFrame(main_frame, text="Training Progress", padding="10")
-        self.progress_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        
-        self.progress_var = tk.StringVar(value="Ready to train...")
-        self.progress_label = ttk.Label(self.progress_frame, textvariable=self.progress_var, wraplength=700)
-        self.progress_label.grid(row=0, column=0, sticky=tk.W)
-        
-        self.progress_bar = ttk.Progressbar(self.progress_frame, length=700, mode='determinate')
-        self.progress_bar.grid(row=1, column=0, pady=5)
+        options_frame = ttk.Labelframe(main_frame, text="Training Options", padding="10")
+        options_frame.pack(fill=tk.X, pady=(0, 20))
         
         self.save_preprocessed_var = tk.BooleanVar(value=False)
-        save_preprocessed_cb = ttk.Checkbutton(main_frame, text="Save preprocessed data", variable=self.save_preprocessed_var)
-        save_preprocessed_cb.grid(row=5, column=0, columnspan=2, pady=5)
+        save_preprocessed_cb = ttk.Checkbutton(options_frame, text="Save preprocessed data", 
+                                               variable=self.save_preprocessed_var, 
+                                               bootstyle="round-toggle")
+        save_preprocessed_cb.grid(row=0, column=0, padx=10, pady=5, sticky=tk.W)
         
         self.use_preprocessed_var = tk.BooleanVar(value=False)
-        use_preprocessed_cb = ttk.Checkbutton(main_frame, text="Use preprocessed data", variable=self.use_preprocessed_var, command=self.select_preprocessed_file)
-        use_preprocessed_cb.grid(row=6, column=0, columnspan=2, pady=5)
+        use_preprocessed_cb = ttk.Checkbutton(options_frame, text="Use preprocessed data", 
+                                              variable=self.use_preprocessed_var, 
+                                              command=self.select_preprocessed_file, 
+                                              bootstyle="round-toggle")
+        use_preprocessed_cb.grid(row=0, column=1, padx=10, pady=5, sticky=tk.W)
 
         self.use_control_data = tk.BooleanVar(value=False)
-        use_control_data_cb = ttk.Checkbutton(main_frame, text="Use control data", variable=self.use_control_data)
-        use_control_data_cb.grid(row=7, column=0, columnspan=2, pady=5)
+        use_control_data_cb = ttk.Checkbutton(options_frame, text="Use control data", 
+                                              variable=self.use_control_data, 
+                                              bootstyle="round-toggle")
+        use_control_data_cb.grid(row=0, column=2, padx=10, pady=5, sticky=tk.W)
+        
+        train_button = ttk.Button(main_frame, text="Train Selected Models", 
+                                  command=self.train_models, bootstyle="success")
+        train_button.pack(pady=20)
+        
+        self.progress_frame = ttk.Labelframe(main_frame, text="Training Progress", padding="10")
+        self.progress_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        self.progress_var = tk.StringVar(value="Ready to train...")
+        self.progress_label = ttk.Label(self.progress_frame, textvariable=self.progress_var, 
+                                        wraplength=900)
+        self.progress_label.pack(fill=tk.X)
+        
+        self.progress_bar = ttk.Progressbar(self.progress_frame, length=900, mode='determinate', 
+                                            bootstyle="success-striped")
+        self.progress_bar.pack(pady=10)
         
         self.preprocessed_file_path = None
 
@@ -212,7 +237,7 @@ class ModelTrainingGUI:
         X_test_rfe = rfecv.transform(X_test_transformed)
         
         self.update_progress("Applying PCA...", 35)
-        pca = PCA(n_components=0.95)
+        pca = PCA(n_components=0.95, random_state=42)
         self.X_train_pca = pca.fit_transform(X_train_rfe)
         self.X_test_pca = pca.transform(X_test_rfe)
         
@@ -454,7 +479,7 @@ class ModelTrainingGUI:
 
 def main():
     init(autoreset=True)
-    root = ttk.Window(themename="superhero")
+    root = ttk.Window(themename="darkly")
     root.tk.call('tk', 'scaling', 2.0)
     app = ModelTrainingGUI(root)
     root.mainloop()
