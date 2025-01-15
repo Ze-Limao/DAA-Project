@@ -27,29 +27,32 @@ import neural_network
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.icons import Icon
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import json
+from pathlib import Path
 
 class ModelTrainingGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Advanced Model Training Interface")
-        self.root.geometry("1000x800")
+        self.root.title("Model Training Interface")
+        self.root.geometry("1200x900")
         
         self.X_train_pca = None
         self.X_test_pca = None
         self.y_train_full = None
         self.transition_encoder = None
         self.results = {}
-        
+
         self.create_widgets()
-        
+
     def create_widgets(self):
         main_frame = ttk.Frame(self.root, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        title_label = ttk.Label(main_frame, text="Advanced Model Training Interface", 
-                                font=("Helvetica", 24, "bold"), bootstyle="info")
+
+        title_label = ttk.Label(main_frame, text="Model Training Interface", 
+                                font=("Helvetica", 28, "bold"), bootstyle="info")
         title_label.pack(pady=(0, 20))
-        
+
         model_frame = ttk.Labelframe(main_frame, text="Available Models", padding="10")
         model_frame.pack(fill=tk.X, pady=(0, 20))
         
@@ -100,8 +103,7 @@ class ModelTrainingGUI:
         for i, model_name in enumerate(self.models.keys()):
             var = tk.BooleanVar(value=False)
             self.model_vars[model_name] = var
-            cb = ttk.Checkbutton(model_frame, text=model_name, variable=var, 
-                                 bootstyle="round-toggle")
+            cb = ttk.Checkbutton(model_frame, text=model_name, variable=var, bootstyle="round-toggle")
             cb.grid(row=i//4, column=i%4, sticky=tk.W, padx=10, pady=5)
         
         button_frame = ttk.Frame(main_frame)
@@ -275,6 +277,11 @@ class ModelTrainingGUI:
             messagebox.showwarning("No Selection", "Please select at least one model to train.")
             return
         
+        submissions_dir = "submissions"
+        graphs_dir = "graphs"
+        os.makedirs(submissions_dir, exist_ok=True)
+        os.makedirs(graphs_dir, exist_ok=True)
+        
         try:
             if self.use_preprocessed_var.get():
                 if not self.load_preprocessed_data():
@@ -284,11 +291,6 @@ class ModelTrainingGUI:
                 if self.X_train_pca is None:
                     if not self.preprocess_data():
                         return
-            
-            submissions_dir = "submissions"
-            graphs_dir = "graphs"
-            os.makedirs(submissions_dir, exist_ok=True)
-            os.makedirs(graphs_dir, exist_ok=True)
             
             X_train, X_val, y_train, y_val = train_test_split(
                 self.X_train_pca, self.y_train_full, test_size=0.2, random_state=42
@@ -404,10 +406,20 @@ class ModelTrainingGUI:
                         'f1': f1_score(y_val, y_pred, average='macro')
                     }
                     
+                    model_params = {model_name: clf.best_params_ if model_name not in ["Neural Network", "Stacking"] else "Default parameters used"}
+                    if os.path.exists(f"{submissions_dir}/model_parameters.json"):
+                        with open(f"{submissions_dir}/model_parameters.json", "r") as json_file:
+                            existing_params = json.load(json_file)
+                        existing_params.update(model_params)
+                    else:
+                        existing_params = model_params
+                    
+                    with open(f"{submissions_dir}/model_parameters.json", "w") as json_file:
+                        json.dump(existing_params, json_file, indent=4)
+                    
                     best_model.fit(self.X_train_pca, self.y_train_full)
                     y_pred_submission = best_model.predict(self.X_test_pca)
                     y_pred_submission_decoded = self.transition_encoder.inverse_transform(y_pred_submission)
-                    
                     submission = pd.DataFrame({
                         "RowId": range(1, len(y_pred_submission) + 1),
                         "Result": y_pred_submission_decoded
@@ -422,55 +434,47 @@ class ModelTrainingGUI:
             
             plt.style.use('default')
             sns.set_palette("husl")
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+            fig, ax = plt.subplots(figsize=(12, 6))
             
-            sns.barplot(x=accuracies, y=model_names, hue=model_names, ax=ax1, palette='viridis')
-            ax1.set_title('Model Accuracy Comparison', pad=20)
-            ax1.set_xlabel('Accuracy')
-            ax1.grid(True, axis='x')
-            for i, v in enumerate(accuracies):
-                ax1.text(v, i, f' {v:.3f}', va='center')
-            
-            sns.barplot(x=f1_scores, y=model_names, hue=model_names, ax=ax2, palette='viridis')
-            ax2.set_title('Model F1-Score Comparison', pad=20)
-            ax2.set_xlabel('F1-Score')
-            ax2.grid(True, axis='x')
-            for i, v in enumerate(f1_scores):
-                ax2.text(v, i, f' {v:.3f}', va='center')
-            
-            plt.tight_layout()
-            plt.savefig(f"{graphs_dir}/model_performance_comparison.png", dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            plt.figure(figsize=(12, 6))
             x = np.arange(len(model_names))
             width = 0.35
             
-            plt.bar(x - width/2, accuracies, width, label='Accuracy', color='skyblue')
-            plt.bar(x + width/2, f1_scores, width, label='F1-Score', color='lightgreen')
+            bars1 = ax.bar(x - width/2, accuracies, width, label='Accuracy', color='skyblue')
+            bars2 = ax.bar(x + width/2, f1_scores, width, label='F1-Score', color='lightgreen')
             
-            plt.xlabel('Models')
-            plt.ylabel('Score')
-            plt.title('Model Performance Comparison (Accuracy vs F1-Score)')
-            plt.xticks(x, model_names, rotation=45, ha='right')
-            plt.legend()
-            plt.grid(True, axis='y')
+            ax.set_xlabel('Models')
+            ax.set_ylabel('Score')
+            ax.set_title('Model Performance Comparison (Accuracy vs F1-Score)')
+            ax.set_xticks(x)
+            ax.set_xticklabels(model_names, rotation=45, ha='right')
+            ax.legend()
+            ax.grid(True, axis='y')
             
-            for i, (acc, f1) in enumerate(zip(accuracies, f1_scores)):
-                plt.text(i - width/2, acc, f'{acc:.3f}', ha='center', va='bottom')
-                plt.text(i + width/2, f1, f'{f1:.3f}', ha='center', va='bottom')
+            for bar in bars1:
+                height = bar.get_height()
+                ax.annotate(f'{height:.3f}', xy=(bar.get_x() + bar.get_width() / 2, height),
+                            xytext=(0, 3), textcoords="offset points", ha='center', va='bottom')
+            
+            for bar in bars2:
+                height = bar.get_height()
+                ax.annotate(f'{height:.3f}', xy=(bar.get_x() + bar.get_width() / 2, height),
+                            xytext=(0, 3), textcoords="offset points", ha='center', va='bottom')
             
             plt.tight_layout()
-            plt.savefig(f"{graphs_dir}/model_performance_combined.png", dpi=300, bbox_inches='tight')
-            plt.close()
             
-            self.update_progress("Training completed! Check submissions and graphs directories.", 100)
+            self.update_progress("Training completed! Check the graph above.", 100)
             messagebox.showinfo(
                 "Success",
                 "Model training and submission files generation completed!\n"
-                f"Submissions saved in: {submissions_dir}\n"
-                f"Performance graphs saved in: {graphs_dir}"
+                "Performance graph is displayed in the UI."
             )
+            
+            for widget in self.progress_frame.winfo_children():
+                widget.destroy()
+            
+            canvas = FigureCanvasTkAgg(fig, master=self.progress_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
             
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {str(e)}")
