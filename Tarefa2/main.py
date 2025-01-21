@@ -58,45 +58,59 @@ class ModelTrainingGUI:
         
         self.models = {
             "RandomForest": {
-                'model': Pipeline([('classifier', RandomForestClassifier(random_state=42))]),
-                'params': {
-                    'classifier__n_estimators': [100, 200],
-                    'classifier__max_depth': [None, 10, 20],
-                    'classifier__min_samples_split': [2, 5, 10],
-                    'classifier__min_samples_leaf': [1, 2, 4]
-                }
+            'model': Pipeline([('classifier', RandomForestClassifier(random_state=42))]),
+            'params': {
+                'classifier__n_estimators': [100, 200, 300],
+                'classifier__max_depth': [5, 10, 20],
+                'classifier__min_samples_split': [2, 5, 10],
+                'classifier__min_samples_leaf': [1, 2, 4]
+            }
             },
             "GradientBoosting": {
-                'model': Pipeline([('classifier', GradientBoostingClassifier(random_state=42))]),
-                'params': {
-                    'classifier__n_estimators': [100, 200, 300],
-                    'classifier__learning_rate': [0.01, 0.05, 0.1],
-                    'classifier__max_depth': [3, 4, 5],
-                    'classifier__subsample': [0.7, 0.8, 1.0]
-                }
+            'model': Pipeline([('classifier', GradientBoostingClassifier(random_state=42))]),
+            'params': {
+                'classifier__n_estimators': [50, 100, 150],
+                'classifier__learning_rate': [0.01, 0.05, 0.1],
+                'classifier__max_depth': [2, 5, 10],
+                'classifier__subsample': [0.7, 0.8, 1.0]
+            }
             },
             "Bagging": {
-                'model': Pipeline([('classifier', BaggingClassifier(random_state=42))]),
-                'params': {'classifier__n_estimators': [50, 100, 150]}
+            'model': Pipeline([('classifier', BaggingClassifier(random_state=42))]),
+            'params': {'classifier__n_estimators': [90, 100, 110]}
             },
             "DecisionTree": {
-                'model': Pipeline([('classifier', DecisionTreeClassifier(random_state=42))]),
-                'params': {'classifier__max_depth': [None, 10, 20]}
+            'model': Pipeline([('classifier', DecisionTreeClassifier(random_state=42))]),
+            'params': {'classifier__max_depth': [10, 15, 20]}
             },
             "SVM": {
-                'model': Pipeline([('classifier', SVC(probability=True))]),
-                'params': {'classifier__C': [0.5, 1, 5, 10]}
+            'model': Pipeline([('classifier', SVC(probability=True))]),
+            'params': {
+                'classifier__C': [0.1, 1, 10, 100],
+                'classifier__kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+                'classifier__gamma': ['scale', 'auto']
+            }
             },
             "XGBoost": {
-                'model': Pipeline([('classifier', xgb.XGBClassifier(eval_metric='logloss', random_state=42))]),
-                'params': {
-                    'classifier__n_estimators': [100, 200, 300],
-                    'classifier__learning_rate': [0.05, 0.1, 0.2],
-                    'classifier__max_depth': [1, 2, 3, 4]
-                }
+            'model': Pipeline([('classifier', xgb.XGBClassifier(eval_metric='logloss', random_state=42))]),
+            'params': {
+                'classifier__n_estimators': [400, 600, 800],
+                'classifier__learning_rate': [0.05, 0.1, 0.2],
+                'classifier__max_depth': [1, 2, 3, 4],
+                'classifier__colsample_bytree': [0.7, 0.8, 0.9]
+            }
             },
             "Neural Network": {'model': None, 'params': None},
-            "Stacking": {'model': None, 'params': None}
+            "Stacking": {'model': None, 'params': None},
+            "oNova": {
+            'model': Pipeline([('classifier', xgb.XGBClassifier(eval_metric='logloss', random_state=42))]),
+            'params': {
+                'classifier__n_estimators': [300, 350, 400],
+                'classifier__learning_rate': [0.2, 0.3, 0.4],
+                'classifier__max_depth': [1, 2, 3],
+                'classifier__colsample_bytree': [0.7, 0.8, 0.9]
+            }
+            }
         }
         
         self.model_vars = {}
@@ -234,14 +248,41 @@ class ModelTrainingGUI:
         
         self.update_progress("Applying RFECV for feature selection...", 25)
         rf = RandomForestClassifier(random_state=42)
-        rfecv = RFECV(estimator=rf, step=1, cv=3, scoring='f1_macro')
+        cv = StratifiedKFold(3)
+        rfecv = RFECV(estimator=rf, step=1, cv=cv, scoring='f1_macro', n_jobs=-1)
         X_train_rfe = rfecv.fit_transform(X_train_transformed, self.y_train_full)
         X_test_rfe = rfecv.transform(X_test_transformed)
+        
+        print(f"Number of features selected by RFECV: {rfecv.n_features_}")
+        
+        plt.figure(figsize=(10, 6))
+        plt.title('RFECV - Number of Features vs. Cross-Validation Scores')
+        plt.xlabel('Number of Features Selected')
+        plt.ylabel('Cross-Validation Score (F1 Macro)')
+        plt.plot(range(1, len(rfecv.cv_results_['mean_test_score']) + 1), rfecv.cv_results_['mean_test_score'])
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig('rfecv_feature_selection.png')
+        plt.show()
         
         self.update_progress("Applying PCA...", 35)
         pca = PCA(n_components=0.95, random_state=42)
         self.X_train_pca = pca.fit_transform(X_train_rfe)
         self.X_test_pca = pca.transform(X_test_rfe)
+        
+        print(f"Number of components selected by PCA: {pca.n_components_}")
+        print(f"Explained variance ratio by PCA components: {pca.explained_variance_ratio_}")
+        
+        plt.figure(figsize=(10, 6))
+        plt.bar(range(1, pca.n_components_ + 1), pca.explained_variance_ratio_, alpha=0.5, align='center')
+        plt.step(range(1, pca.n_components_ + 1), np.cumsum(pca.explained_variance_ratio_), where='mid')
+        plt.xlabel('Principal Component Index')
+        plt.ylabel('Explained Variance Ratio')
+        plt.title('PCA - Explained Variance Ratio by Principal Components')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig('pca_explained_variance.png')
+        plt.show()
         
         if self.save_preprocessed_var.get():
             preprocessed_data = {
@@ -278,8 +319,10 @@ class ModelTrainingGUI:
             return
         
         submissions_dir = "submissions"
+        stats_dir = "stats"
         graphs_dir = "graphs"
         os.makedirs(submissions_dir, exist_ok=True)
+        os.makedirs(stats_dir, exist_ok=True)
         os.makedirs(graphs_dir, exist_ok=True)
         
         try:
@@ -407,14 +450,14 @@ class ModelTrainingGUI:
                     }
                     
                     model_params = {model_name: clf.best_params_ if model_name not in ["Neural Network", "Stacking"] else "Default parameters used"}
-                    if os.path.exists(f"{submissions_dir}/model_parameters.json"):
-                        with open(f"{submissions_dir}/model_parameters.json", "r") as json_file:
+                    if os.path.exists(f"{stats_dir}/model_parameters.json"):
+                        with open(f"{stats_dir}/model_parameters.json", "r") as json_file:
                             existing_params = json.load(json_file)
                         existing_params.update(model_params)
                     else:
                         existing_params = model_params
                     
-                    with open(f"{submissions_dir}/model_parameters.json", "w") as json_file:
+                    with open(f"{stats_dir}/model_parameters.json", "w") as json_file:
                         json.dump(existing_params, json_file, indent=4)
                     
                     best_model.fit(self.X_train_pca, self.y_train_full)
