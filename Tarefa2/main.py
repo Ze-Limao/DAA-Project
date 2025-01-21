@@ -5,11 +5,12 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import (
     RandomForestClassifier, GradientBoostingClassifier,
-    BaggingClassifier, StackingClassifier
+    BaggingClassifier, StackingClassifier, ExtraTreesClassifier,
 )
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder, Normalizer
 from sklearn.compose import ColumnTransformer
@@ -81,7 +82,11 @@ class ModelTrainingGUI:
             },
             "DecisionTree": {
             'model': Pipeline([('classifier', DecisionTreeClassifier(random_state=42))]),
-            'params': {'classifier__max_depth': [10, 15, 20]}
+            'params': {
+                'classifier__max_depth': [10, 15, 20],
+                'classifier__min_samples_split': [2, 5, 10],
+                'classifier__min_samples_leaf': [3, 5, 7],
+            }
             },
             "SVM": {
             'model': Pipeline([('classifier', SVC(probability=True))]),
@@ -100,8 +105,6 @@ class ModelTrainingGUI:
                 'classifier__colsample_bytree': [0.7, 0.8, 0.9]
             }
             },
-            "Neural Network": {'model': None, 'params': None},
-            "Stacking": {'model': None, 'params': None},
             "oNova": {
             'model': Pipeline([('classifier', xgb.XGBClassifier(eval_metric='logloss', random_state=42))]),
             'params': {
@@ -110,7 +113,26 @@ class ModelTrainingGUI:
                 'classifier__max_depth': [1, 2, 3],
                 'classifier__colsample_bytree': [0.7, 0.8, 0.9]
             }
+            },
+            "Nearest Neighbors": {
+            'model': Pipeline([('classifier', KNeighborsClassifier())]),
+            'params': {
+                'classifier__n_neighbors': [1,3,5],
+                'classifier__weights': ['uniform', 'distance'],
+                'classifier__metric': ['euclidean', 'manhattan', 'minkowski']
             }
+            },
+            "Extra Trees": {
+            'model': Pipeline([('classifier', ExtraTreesClassifier(random_state=42))]),
+            'params': {
+                'classifier__n_estimators': [375, 400, 425],
+                'classifier__max_depth': [20, 25, 30],
+                'classifier__min_samples_split': [1,2,3],
+                'classifier__min_samples_leaf': [0.5, 1, 1.5]
+            }
+            },
+            "Neural Network": {'model': None, 'params': None},
+            "Stacking": {'model': None, 'params': None}
         }
         
         self.model_vars = {}
@@ -253,36 +275,10 @@ class ModelTrainingGUI:
         X_train_rfe = rfecv.fit_transform(X_train_transformed, self.y_train_full)
         X_test_rfe = rfecv.transform(X_test_transformed)
         
-        print(f"Number of features selected by RFECV: {rfecv.n_features_}")
-        
-        plt.figure(figsize=(10, 6))
-        plt.title('RFECV - Number of Features vs. Cross-Validation Scores')
-        plt.xlabel('Number of Features Selected')
-        plt.ylabel('Cross-Validation Score (F1 Macro)')
-        plt.plot(range(1, len(rfecv.cv_results_['mean_test_score']) + 1), rfecv.cv_results_['mean_test_score'])
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig('rfecv_feature_selection.png')
-        plt.show()
-        
         self.update_progress("Applying PCA...", 35)
         pca = PCA(n_components=0.95, random_state=42)
         self.X_train_pca = pca.fit_transform(X_train_rfe)
         self.X_test_pca = pca.transform(X_test_rfe)
-        
-        print(f"Number of components selected by PCA: {pca.n_components_}")
-        print(f"Explained variance ratio by PCA components: {pca.explained_variance_ratio_}")
-        
-        plt.figure(figsize=(10, 6))
-        plt.bar(range(1, pca.n_components_ + 1), pca.explained_variance_ratio_, alpha=0.5, align='center')
-        plt.step(range(1, pca.n_components_ + 1), np.cumsum(pca.explained_variance_ratio_), where='mid')
-        plt.xlabel('Principal Component Index')
-        plt.ylabel('Explained Variance Ratio')
-        plt.title('PCA - Explained Variance Ratio by Principal Components')
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig('pca_explained_variance.png')
-        plt.show()
         
         if self.save_preprocessed_var.get():
             preprocessed_data = {
@@ -367,9 +363,9 @@ class ModelTrainingGUI:
                     
                     self.results[model_name] = {
                         'accuracy': accuracy_score(y_val_np, y_pred_val_np),
-                        'f1': f1_score(y_val_np, y_pred_val_np, average='macro')
+                        'f1': f1_score(y_val_np, y_pred_val_np, average='macro'),
+                        'precision': precision_score(y_val_np, y_pred_val_np, average='macro')
                     }
-                    
                     neural_network_model.eval()
                     with torch.no_grad():
                         X_test_tensor = torch.tensor(self.X_test_pca, dtype=torch.float32)
@@ -418,7 +414,8 @@ class ModelTrainingGUI:
                     
                     self.results[model_name] = {
                         'accuracy': accuracy_score(y_val, y_pred_val),
-                        'f1': f1_score(y_val, y_pred_val, average='macro')
+                        'f1': f1_score(y_val, y_pred_val, average='macro'),
+                        'precision': precision_score(y_val, y_pred_val, average='macro')
                     }
                     
                     stacking_model.fit(self.X_train_pca, self.y_train_full)
@@ -446,7 +443,8 @@ class ModelTrainingGUI:
                     
                     self.results[model_name] = {
                         'accuracy': accuracy_score(y_val, y_pred),
-                        'f1': f1_score(y_val, y_pred, average='macro')
+                        'f1': f1_score(y_val, y_pred, average='macro'),
+                        'precision': precision_score(y_val, y_pred, average='macro')
                     }
                     
                     model_params = {model_name: clf.best_params_ if model_name not in ["Neural Network", "Stacking"] else "Default parameters used"}
@@ -474,34 +472,32 @@ class ModelTrainingGUI:
             model_names = list(self.results.keys())
             accuracies = [self.results[model]['accuracy'] for model in model_names]
             f1_scores = [self.results[model]['f1'] for model in model_names]
+            precisions = [self.results[model]['precision'] for model in model_names]
             
             plt.style.use('default')
             sns.set_palette("husl")
             fig, ax = plt.subplots(figsize=(12, 6))
             
             x = np.arange(len(model_names))
-            width = 0.35
+            width = 0.25
             
-            bars1 = ax.bar(x - width/2, accuracies, width, label='Accuracy', color='skyblue')
-            bars2 = ax.bar(x + width/2, f1_scores, width, label='F1-Score', color='lightgreen')
+            bars1 = ax.bar(x - width, accuracies, width, label='Accuracy', color='skyblue')
+            bars2 = ax.bar(x, f1_scores, width, label='F1-Score', color='lightgreen')
+            bars3 = ax.bar(x + width, precisions, width, label='Precision', color='salmon')
             
             ax.set_xlabel('Models')
             ax.set_ylabel('Score')
-            ax.set_title('Model Performance Comparison (Accuracy vs F1-Score)')
+            ax.set_title('Model Performance Comparison (Accuracy, F1-Score, Precision)')
             ax.set_xticks(x)
             ax.set_xticklabels(model_names, rotation=45, ha='right')
             ax.legend()
             ax.grid(True, axis='y')
             
-            for bar in bars1:
-                height = bar.get_height()
-                ax.annotate(f'{height:.3f}', xy=(bar.get_x() + bar.get_width() / 2, height),
-                            xytext=(0, 3), textcoords="offset points", ha='center', va='bottom')
-            
-            for bar in bars2:
-                height = bar.get_height()
-                ax.annotate(f'{height:.3f}', xy=(bar.get_x() + bar.get_width() / 2, height),
-                            xytext=(0, 3), textcoords="offset points", ha='center', va='bottom')
+            for bars in [bars1, bars2, bars3]:
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.annotate(f'{height:.3f}', xy=(bar.get_x() + bar.get_width() / 2, height),
+                                xytext=(0, 5), textcoords="offset points", ha='center', va='bottom')
             
             plt.tight_layout()
             
